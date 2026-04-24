@@ -11,6 +11,7 @@ CORS(app)
 
 SOUND_PATH = os.path.join(os.path.dirname(__file__), "sound")
 STATS_FILE = os.path.join(SOUND_PATH, "stats.json")
+LOG_FILE = os.path.join(SOUND_PATH, "download.log")
 
 os.makedirs(SOUND_PATH, exist_ok=True)
 
@@ -34,6 +35,13 @@ def save_stats():
     with open(STATS_FILE, 'w') as f:
         json.dump(cache_stats, f, indent=2)
 
+def log_download(music_id, source, status):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] ID: {music_id} | Источник: {source} | Статус: {status}\n"
+    with open(LOG_FILE, 'a', encoding='utf-8') as f:
+        f.write(log_entry)
+    print(f"📝 Логирование: {source}")
+
 def find_cached_file(music_id):
     for file in os.listdir(SOUND_PATH):
         if file.startswith(f"{music_id}."):
@@ -45,7 +53,8 @@ def download_from_newgrounds(music_id):
     try:
         response = requests.get(url, timeout=30, stream=True)
         response.raise_for_status()
-        return response.content, response.headers.get('content-type', '')
+        log_download(music_id, "newgrounds.com/audio/download", "OK")
+        return response.content, response.headers.get('content-type', ''), "direct"
     except:
         try:
             listen_url = f"https://www.newgrounds.com/audio/listen/{music_id}"
@@ -57,10 +66,13 @@ def download_from_newgrounds(music_id):
                 audio_url = audio_match.group(1)
                 audio_response = requests.get(audio_url, timeout=30, stream=True)
                 audio_response.raise_for_status()
-                return audio_response.content, audio_response.headers.get('content-type', '')
+                log_download(music_id, "audio.ngfiles.com (parsed)", "OK")
+                return audio_response.content, audio_response.headers.get('content-type', ''), "parsed"
             
+            log_download(music_id, "unknown", "FAILED - не найден og:audio")
             raise Exception("Не удалось найти аудиофайл на странице")
         except Exception as e:
+            log_download(music_id, "unknown", f"FAILED - {str(e)}")
             raise Exception(f"Ошибка скачивания: {str(e)}")
 
 def get_extension(content_type):
@@ -77,6 +89,7 @@ def download_music(music_id):
     cached_file = find_cached_file(music_id)
     if cached_file:
         cache_stats["cache_hits"] += 1
+        log_download(music_id, "cache", "OK")
         save_stats()
         return send_file(cached_file, as_attachment=True)
     
@@ -84,14 +97,14 @@ def download_music(music_id):
         cache_stats["cache_misses"] += 1
         cache_stats["total_downloads"] += 1
         
-        content, content_type = download_from_newgrounds(music_id)
+        content, content_type, source = download_from_newgrounds(music_id)
         extension = get_extension(content_type)
         
         file_path = os.path.join(SOUND_PATH, f"{music_id}.{extension}")
         with open(file_path, 'wb') as f:
             f.write(content)
         
-        cache_stats["cached_files"] = len([f for f in os.listdir(SOUND_PATH) if f != "stats.json"])
+        cache_stats["cached_files"] = len([f for f in os.listdir(SOUND_PATH) if f != "stats.json" and f != "download.log"])
         save_stats()
         
         return send_file(file_path, as_attachment=True)
