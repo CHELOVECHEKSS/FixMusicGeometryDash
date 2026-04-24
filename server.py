@@ -4,6 +4,7 @@ import requests
 import os
 import json
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 CORS(app)
@@ -45,8 +46,22 @@ def download_from_newgrounds(music_id):
         response = requests.get(url, timeout=30, stream=True)
         response.raise_for_status()
         return response.content, response.headers.get('content-type', '')
-    except Exception as e:
-        raise Exception(f"Ошибка скачивания: {str(e)}")
+    except:
+        try:
+            listen_url = f"https://www.newgrounds.com/audio/listen/{music_id}"
+            response = requests.get(listen_url, timeout=30)
+            response.raise_for_status()
+            
+            audio_match = re.search(r'og:audio"\s+content="([^"]+)"', response.text)
+            if audio_match:
+                audio_url = audio_match.group(1)
+                audio_response = requests.get(audio_url, timeout=30, stream=True)
+                audio_response.raise_for_status()
+                return audio_response.content, audio_response.headers.get('content-type', '')
+            
+            raise Exception("Не удалось найти аудиофайл на странице")
+        except Exception as e:
+            raise Exception(f"Ошибка скачивания: {str(e)}")
 
 def get_extension(content_type):
     if 'audio/mpeg' in content_type or 'mp3' in content_type:
