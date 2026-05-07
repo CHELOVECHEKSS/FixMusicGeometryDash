@@ -100,6 +100,14 @@ def download_from_newgrounds(music_id):
     try:
         dlog(f"[{music_id}] Попытка прямой загрузки: {url}")
         response = session.get(url, timeout=30, stream=True)
+        
+        if response.status_code == 403:
+            log_download(music_id, "newgrounds.com/audio/download", "FAILED - капча/блокировка")
+            raise Exception("Доступ запрещён (капча или блокировка)")
+        if response.status_code == 404:
+            log_download(music_id, "newgrounds.com/audio/download", "FAILED - трек не найден")
+            raise Exception("Трек не существует")
+        
         response.raise_for_status()
         content_type = response.headers.get('content-type', '')
         ext = get_extension(content_type)
@@ -108,11 +116,27 @@ def download_from_newgrounds(music_id):
         stream_to_file(response, file_path)
         log_download(music_id, "newgrounds.com/audio/download", "OK")
         return file_path
-    except:
+    except requests.exceptions.Timeout:
+        log_download(music_id, "newgrounds.com/audio/download", "FAILED - таймаут")
+        raise Exception("Превышено время ожидания")
+    except requests.exceptions.ConnectionError:
+        log_download(music_id, "newgrounds.com/audio/download", "FAILED - ошибка соединения")
+        raise Exception("Не удалось подключиться к серверу")
+    except Exception as e:
+        if "капча" in str(e) or "не существует" in str(e) or "Превышено" in str(e) or "подключиться" in str(e):
+            raise
         try:
             listen_url = f"https://www.newgrounds.com/audio/listen/{music_id}"
             dlog(f"[{music_id}] Прямая загрузка не удалась, парсим страницу: {listen_url}")
             response = session.get(listen_url, timeout=30)
+            
+            if response.status_code == 403:
+                log_download(music_id, "newgrounds.com/audio/listen", "FAILED - капча/блокировка")
+                raise Exception("Доступ запрещён (капча или блокировка)")
+            if response.status_code == 404:
+                log_download(music_id, "newgrounds.com/audio/listen", "FAILED - трек не найден")
+                raise Exception("Трек не существует")
+            
             response.raise_for_status()
 
             audio_match = re.search(r'og:audio"\s+content="([^"]+)"', response.text)
@@ -129,10 +153,16 @@ def download_from_newgrounds(music_id):
                 return file_path
 
             log_download(music_id, "unknown", "FAILED - не найден og:audio")
-            raise Exception("Не удалось найти аудиофайл на странице")
+            raise Exception("Аудиофайл не найден на странице")
+        except requests.exceptions.Timeout:
+            log_download(music_id, "unknown", "FAILED - таймаут")
+            raise Exception("Превышено время ожидания")
+        except requests.exceptions.ConnectionError:
+            log_download(music_id, "unknown", "FAILED - ошибка соединения")
+            raise Exception("Не удалось подключиться к серверу")
         except Exception as e:
             log_download(music_id, "unknown", f"FAILED - {str(e)}")
-            raise Exception(f"Ошибка скачивания: {str(e)}")
+            raise
 
 def get_download_lock(music_id):
     with download_locks_lock:
