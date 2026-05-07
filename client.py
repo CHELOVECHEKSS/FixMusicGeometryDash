@@ -50,23 +50,30 @@ def download_with_progress(music_id, server_url):
         input(f"\n{Fore.YELLOW}Нажмите Enter для продолжения...{Style.RESET_ALL}")
         clear_screen()
     except requests.exceptions.ConnectionError:
-        print(f"{Fore.RED}✗ Ошибка подключения к серверу{Style.RESET_ALL}")
+        print(f"{Fore.RED}✗ [SERVERERROR] Ошибка подключения к серверу{Style.RESET_ALL}")
         print(f"{Fore.RED}  Убедитесь, что сервер запущен на {SERVER_URL}{Style.RESET_ALL}\n")
     except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
-            print(f"{Fore.RED}✗ Музыка не найдена{Style.RESET_ALL}")
-            print(f"{Fore.RED}  ID {music_id} не существует на Newgrounds{Style.RESET_ALL}\n")
-        elif e.response.status_code == 400:
-            print(f"{Fore.RED}✗ Ошибка скачивания{Style.RESET_ALL}")
-            print(f"{Fore.RED}  Не удалось скачать музыку с Newgrounds{Style.RESET_ALL}\n")
+        status_code = e.response.status_code
+        try:
+            error_msg = e.response.json().get('error', 'Неизвестная ошибка')
+        except:
+            error_msg = str(e)
+        
+        if status_code == 403:
+            print(f"{Fore.RED}✗ [CAPTCHAFALLED] Капча не пройдена{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTBLACK_EX}  Подробности: {error_msg}{Style.RESET_ALL}\n")
+        elif status_code == 404:
+            print(f"{Fore.RED}✗ [MUSICNOTFOUND] Музыка не найдена{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTBLACK_EX}  Подробности: {error_msg}{Style.RESET_ALL}\n")
+        elif status_code == 400:
+            print(f"{Fore.RED}✗ [SERVERNEWGROUNDERROR] Ошибка загрузки с Newgrounds{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTBLACK_EX}  Подробности: {error_msg}{Style.RESET_ALL}\n")
         else:
-            try:
-                error_msg = e.response.json().get('error', 'Неизвестная ошибка')
-            except:
-                error_msg = str(e)
-            print(f"{Fore.RED}✗ Ошибка: {error_msg}{Style.RESET_ALL}\n")
+            print(f"{Fore.RED}✗ [SERVERERROR] Ошибка сервера (HTTP {status_code}){Style.RESET_ALL}")
+            print(f"{Fore.LIGHTBLACK_EX}  Подробности: {error_msg}{Style.RESET_ALL}\n")
     except Exception as e:
-        print(f"{Fore.RED}✗ Неожиданная ошибка: {e}{Style.RESET_ALL}\n")
+        print(f"{Fore.RED}✗ [UNKNOWNERROR] Неизвестная ошибка{Style.RESET_ALL}")
+        print(f"{Fore.LIGHTBLACK_EX}  Подробности: {e}{Style.RESET_ALL}\n")
 def main():
     clear_screen()
     print(f"{Fore.CYAN}{Back.BLACK}=== Клиент скачивания музыки Geometry Dash ==={Style.RESET_ALL}")
