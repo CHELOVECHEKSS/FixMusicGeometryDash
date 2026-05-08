@@ -170,6 +170,78 @@ def get_download_lock(music_id):
             download_locks[music_id] = threading.Lock()
         return download_locks[music_id]
 
+ALLOWED_DOMAINS = ['newgrounds.com', 'audio.ngfiles.com']
+ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.ogg'}
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
+def is_safe_url(url):
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        return any(allowed in parsed.netloc for allowed in ALLOWED_DOMAINS)
+    except:
+        return False
+
+def is_valid_audio_file(filename):
+    """Проверяет, что файл имеет допустимое расширение"""
+    return any(filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS)
+
+@app.route('/upload/<int:music_id>', methods=['POST'])
+def upload_music(music_id):
+    """Принимает загрузку музыки от клиента"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "Файл не найден в запросе"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "Имя файла пустое"}), 400
+        
+        # Проверка расширения файла
+        if not is_valid_audio_file(file.filename):
+            return jsonify({"error": f"Недопустимый формат файла. Разрешены только: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
+        
+        # Проверка, что файл уже не существует на сервере
+        cached_file = find_cached_file(music_id)
+        if cached_file:
+            dlog(f"[{music_id}] Файл уже существует на сервере: {cached_file}")
+            return jsonify({"status": "already_exists", "message": "Файл уже есть на сервере"}), 200
+        
+        # Определяем расширение из имени файла
+        extension = os.path.splitext(file.filename)[1]
+        if not extension:
+            extension = '.mp3'
+        
+        filepath = os.path.join(SOUND_PATH, f"{music_id}{extension}")
+        
+        # Сохраняем файл с проверкой размера
+        file.save(filepath)
+        file_size = os.path.getsize(filepath)
+        
+        if file_size > MAX_FILE_SIZE:
+            os.remove(filepath)
+            return jsonify({"error": f"Файл слишком большой. Максимум {MAX_FILE_SIZE // (1024*1024)} MB"}), 400
+        
+        if file_size < 1024:  # Меньше 1 KB - подозрительно
+            os.remove(filepath)
+            return jsonify({"error": "Файл слишком маленький, возможно поврежден"}), 400
+        
+        dlog(f"[{music_id}] Файл загружен от клиента: {filepath} ({file_size} bytes)")
+        log_download(music_id, "client_upload", "OK")
+        
+        with stats_lock:
+            cache_stats["cached_files"] = len([
+                f for f in os.listdir(SOUND_PATH)
+                if f not in ("stats.json", "download.log")
+            ])
+            save_stats()
+        
+        return jsonify({"status": "uploaded", "message": "Файл успешно загружен на сервер"}), 200
+        
+    except Exception as e:
+        dlog(f"[{music_id}] Ошибка загрузки: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/download/<int:music_id>', methods=['GET'])
 def download_music(music_id):
     dlog(f"[{music_id}] Запрос на скачивание")
